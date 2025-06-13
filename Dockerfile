@@ -1,6 +1,5 @@
 # 1. 构建阶段
 FROM node:18-alpine AS builder
-
 WORKDIR /app
 
 # 安装 pnpm
@@ -15,8 +14,16 @@ RUN pnpm install
 # 复制全部源码
 COPY . .
 
-# 如果你需要环境变量文件，请取消下一行的注释，并确保在构建镜像时准备好 .env 文件
-# COPY .env .env
+# 以下新增，声明 ARG 并赋值给 ENV，便于 pnpm build 时可用
+ARG VITE_FAL_API_KEYS
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+ARG VITE_THIRD_PARTY_API_KEY
+
+ENV VITE_FAL_API_KEYS=$VITE_FAL_API_KEYS
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+ENV VITE_THIRD_PARTY_API_KEY=$VITE_THIRD_PARTY_API_KEY
 
 # 构建生产文件
 RUN pnpm build
@@ -34,5 +41,4 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
-
 CMD ["nginx", "-g", "daemon off;"]
