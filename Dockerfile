@@ -33,6 +33,6 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # 如果有自定义 nginx 配置可取消这行注释
 # COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-EXPOSE 80
+EXPOSE 9977
 
 CMD ["nginx", "-g", "daemon off;"]
