@@ -1,20 +1,33 @@
 import OpenAI from 'openai';
+import { ENV } from '@/utils/env';
 
 // 从环境变量获取配置
-const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
-const SITE_URL = import.meta.env.VITE_SITE_URL || 'http://localhost:5173';
-const SITE_NAME = import.meta.env.VITE_SITE_NAME || 'AI Image Generator';
-
-// 创建OpenRouter客户端
-export const openrouterClient = new OpenAI({
-  baseURL: "https://openrouter.ai/api/v1",
-  apiKey: OPENROUTER_API_KEY,
-  defaultHeaders: {
-    "HTTP-Referer": SITE_URL,
-    "X-Title": SITE_NAME,
-  },
-  dangerouslyAllowBrowser: true
+const getOpenRouterConfig = () => ({
+  OPENROUTER_API_KEY: ENV.OPENROUTER_API_KEY(),
+  SITE_URL: ENV.SITE_URL(),
+  SITE_NAME: ENV.SITE_NAME()
 });
+
+// 创建OpenRouter客户端（延迟初始化）
+let openrouterClient: OpenAI | null = null;
+
+const getOpenRouterClient = () => {
+  if (!openrouterClient) {
+    const config = getOpenRouterConfig();
+    openrouterClient = new OpenAI({
+      baseURL: "https://openrouter.ai/api/v1",
+      apiKey: config.OPENROUTER_API_KEY,
+      defaultHeaders: {
+        "HTTP-Referer": config.SITE_URL,
+        "X-Title": config.SITE_NAME,
+      },
+      dangerouslyAllowBrowser: true
+    });
+  }
+  return openrouterClient;
+};
+
+export { getOpenRouterClient as openrouterClient };
 
 // OpenRouter API响应类型
 export interface OpenRouterResponse {
@@ -56,14 +69,17 @@ export async function callOpenRouter(
   try {
     console.log('🚀 调用OpenRouter API:', { model, messages, options });
 
-    const completion = await openrouterClient.chat.completions.create({
+    const client = getOpenRouterClient();
+    const config = getOpenRouterConfig();
+    
+    const completion = await client.chat.completions.create({
       model,
       messages,
       max_tokens: options.max_tokens || 1000,
       temperature: options.temperature || 0.7,
       extra_headers: {
-        "HTTP-Referer": SITE_URL,
-        "X-Title": SITE_NAME,
+        "HTTP-Referer": config.SITE_URL,
+        "X-Title": config.SITE_NAME,
       },
       extra_body: {},
     } as any);
