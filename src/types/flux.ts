@@ -61,10 +61,11 @@ export interface Model {
   description?: string; // 添加可选的描述属性
   inputSchema: ModelParameter[];
   outputSchema: ModelParameter[];
-  // --- 新增可选属性以支持第三方模型 ---
+  provider?: string;    // 模型提供者 (openrouter, fal, etc.)
+  category?: string;    // 添加可选的分类属性
+  // --- 保留向后兼容性 ---
   isThirdParty?: boolean; // 标识是否为第三方模型
   apiEndpoint?: string;   // 第三方模型的API地址
-  category?: string;      // 添加可选的分类属性
 }
 
 /**
@@ -126,7 +127,22 @@ export interface SupabaseGeneration {
  */
 export interface SuccessResponse {
   success: true;
-  images: Image[];
+  images?: Image[]; // 对于图像生成模型
+  content?: string; // 对于文本生成模型
+  model?: string; // 使用的模型ID
+  imageUrl?: string; // 上传的图片URL（用于显示）
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    prompt_tokens_details?: {
+      cached_tokens: number;
+    };
+    completion_tokens_details?: {
+      reasoning_tokens: number;
+      image_tokens: number;
+    };
+  }; // API使用情况
   seed?: number; // 修改为可选
   requestId?: string; // 修改为可选
   timings?: Record<string, any>; // 修改为可选

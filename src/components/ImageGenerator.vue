@@ -1,351 +1,579 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
-import type { Model, Image, Generation, SuccessResponse, ErrorResponse, GenerateImageResponse, SuperscaledImage } from "@/types/flux"; // 导入 GenerateImageResponse 和 SuperscaledImage
-import GenerationSettings from "./image-generator/GenerationSettings.vue";
-import ImageDisplay from "./image-generator/ImageDisplay.vue";
+import { ref, watch, computed } from 'vue';
+import type { Model, GenerateImageResponse } from "@/types/flux";
 import { generateImage } from "@/services/generate-image";
-import { saveGeneration } from "@/services/generation-history";
-import { upscaleImage } from "@/services/upscale-image"; // 导入超分服务
-import { saveSuperscaleRecord } from "@/services/superscale-history"; // 导入保存超分记录服务
 import { toast } from 'vue-sonner';
-import { v4 as uuidv4 } from 'uuid';
-
-import { currentUserId } from "@/lib/supabase";
-import { fal } from '@fal-ai/client'; // 导入 fal 用于配置密钥
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
+import { Loader2, Upload, X, Image as ImageIcon, Settings, Download } from 'lucide-vue-next';
+import ImageComparison from './ImageComparison.vue';
 
 const props = defineProps<{
   model: Model;
 }>();
 
-const ensureValidNumImages = (params: Record<string, any>): Record<string, any> => {
-  if (params.num_images !== undefined && params.num_images > 4) {
-    params.num_images = 4;
-  }
-  return params;
-};
-
-const initParameters = (): Record<string, any> => {
-  const defaultParams = Object.fromEntries(
-    props.model.inputSchema
-      .filter(param => param.default !== undefined)
-      .map(param => [param.key, param.default])
-  );
-
-  let customDefaults: Record<string, any> = {};
-
-  if (hasParameter('output_format')) {
-    customDefaults.output_format = 'png';
-  }
-  if (hasParameter('num_images')) {
-    customDefaults.num_images = 1;
-  }
-
-  if (props.model.id === 'fal-ai/flux-pro/v1.1') {
-    if (hasParameter('image_size')) {
-      customDefaults.image_size = 'landscape_16_9';
-    }
-    if (hasParameter('enable_safety_checker')) {
-      customDefaults.enable_safety_checker = false;
-    }
-    if (hasParameter('safety_tolerance')) {
-      customDefaults.safety_tolerance = '6';
-    }
-  }
-  else if (props.model.id === 'fal-ai/flux-pro/v1.1-ultra') {
-    if (hasParameter('aspect_ratio')) {
-      customDefaults.aspect_ratio = '16:9';
-    }
-    if (hasParameter('enable_safety_checker')) {
-      customDefaults.enable_safety_checker = false;
-    }
-    if (hasParameter('safety_tolerance')) {
-      customDefaults.safety_tolerance = '6';
-    }
-  }
-  else if (props.model.id === 'fal-ai/flux-lora') {
-    if (hasParameter('image_size')) {
-      customDefaults.image_size = 'landscape_16_9';
-    }
-    if (hasParameter('guidance_scale')) {
-      customDefaults.guidance_scale = 7.0;
-    }
-    if (hasParameter('num_inference_steps')) {
-      customDefaults.num_inference_steps = 40;
-    }
-    if (hasParameter('enable_safety_checker')) {
-      customDefaults.enable_safety_checker = false;
-    }
-    if (hasParameter('loras')) {
-      customDefaults.loras = [];
-    }
-  } else if (props.model.id === 'jimeng-3.0') {
-     if (hasParameter('width')) {
-         customDefaults.width = 1024;
-     }
-     if (hasParameter('height')) {
-         customDefaults.height = 1024;
-     }
-     if (hasParameter('sample_strength')) {
-         customDefaults.sample_strength = 0.5;
-     }
-     if (hasParameter('negativePrompt')) {
-         customDefaults.negativePrompt = '';
-     }
-  }
-
-  return ensureValidNumImages({ ...defaultParams, ...customDefaults });
-};
-
-const parameters = ref<Record<string, any>>(initParameters());
-const prompt = ref('');
-const result = ref<Image[] | null>(null);
+// 生成状态
 const isGenerating = ref(false);
+const generationResult = ref<GenerateImageResponse | null>(null);
 
-watch(() => props.model.id, () => {
-  parameters.value = initParameters();
+// 基础输入参数
+const prompt = ref('');
+const uploadedImages = ref<Array<{ file: File; url: string; base64: string }>>([]);
+
+// 动态参数
+const parameters = ref<Record<string, any>>({});
+
+// 文件上传处理
+const handleFileUpload = async (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const files = target.files;
+  
+  if (!files) return;
+
+  for (const file of Array.from(files)) {
+    // 检查文件类型
+    if (!file.type.startsWith('image/')) {
+      toast.error(`${file.name} 不是有效的图片文件`);
+      continue;
+    }
+
+    // 检查文件大小 (限制为10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(`${file.name} 文件大小超过10MB限制`);
+      continue;
+    }
+
+    try {
+      // 创建预览URL
+      const url = URL.createObjectURL(file);
+      
+      // 转换为base64
+      const base64 = await fileToBase64(file);
+      
+      uploadedImages.value.push({
+        file,
+        url,
+        base64
+      });
+    } catch (error) {
+      console.error('文件处理失败:', error);
+      toast.error(`处理 ${file.name} 时发生错误`);
+    }
+  }
+
+  // 清空input
+  target.value = '';
+};
+
+// 文件转base64
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
+// 删除上传的图片
+const removeImage = (index: number) => {
+  const image = uploadedImages.value[index];
+  URL.revokeObjectURL(image.url);
+  uploadedImages.value.splice(index, 1);
+};
+
+// 初始化参数
+const initParameters = () => {
+  const params: Record<string, any> = {};
+  
+  props.model.inputSchema.forEach(param => {
+    if (param.default !== undefined) {
+      params[param.key] = param.default;
+    }
+  });
+
+  parameters.value = params;
+};
+
+// 监听模型变化
+watch(() => props.model, () => {
   prompt.value = '';
-  result.value = null;
+  uploadedImages.value.forEach(img => URL.revokeObjectURL(img.url));
+  uploadedImages.value = [];
+  generationResult.value = null;
+  initParameters();
 }, { immediate: true });
 
-function hasParameter(key: string): boolean {
-  return props.model.inputSchema.some(param => param.key === key);
-}
-
-const handleLoadSettings = (settings: { parameters: Record<string, any>, prompt: string }) => {
-  const baseParams = initParameters();
-  parameters.value = ensureValidNumImages({ ...baseParams, ...settings.parameters });
-  prompt.value = settings.prompt || '';
-
-  if (props.model.id === 'fal-ai/flux-lora' && !parameters.value.loras) {
-    parameters.value.loras = [];
-  }
-
-  console.log('已加载设置:', { parameters: parameters.value, prompt: prompt.value });
+// 获取参数值
+const getParameterValue = (param: any) => {
+  return parameters.value[param.key] ?? param.default;
 };
 
-async function handleGenerate() {
-  console.log("🎨 开始客户端图像生成过程");
+// 更新参数值
+const updateParameter = (key: string, value: any) => {
+  parameters.value[key] = value;
+};
 
-  if (!prompt.value.trim() && props.model.inputSchema.some(p => p.key === 'prompt')) {
-    toast.error("请输入提示词");
+// 检查参数是否为必填
+const isRequired = (param: any) => {
+  return param.required === true;
+};
+
+// 生成函数
+const handleGenerate = async () => {
+  if (!prompt.value.trim()) {
+    toast.error('请输入提示词');
     return;
   }
 
-  isGenerating.value = true;
-  result.value = null;
-
-  try {
-    console.log("🛠️ Before ensureValidNumImages, parameters.value:", parameters.value);
-    const allParameters: Record<string, any> = ensureValidNumImages({
-      ...parameters.value,
-      prompt: prompt.value,
-       negative_prompt: props.model.id !== 'jimeng-3.0' ? (parameters.value.negativePrompt ?? parameters.value.negative_prompt ?? '') : undefined,
-    });
-     console.log("🛠️ After ensureValidNumImages, allParameters:", allParameters);
-
-    if (allParameters.loras && Array.isArray(allParameters.loras)) {
-      allParameters.loras = allParameters.loras.filter((lora: { path: string; scale: number }) =>
-        lora.path && lora.path.trim() !== ''
-      );
-      if (allParameters.loras.length === 0) {
-        delete allParameters.loras;
-      }
-    }
-
-    console.log("📤 发送生成请求，最终参数:", allParameters);
-
-    const ACTIVE_KEY_STORAGE_KEY = 'fal-ai-active-key';
-    const API_KEYS_STORAGE_KEY = 'fal-ai-api-keys';
-    const ACTIVE_KEY_INDEX_STORAGE_KEY = 'fal-ai-active-key-index';
-
-    let apiKey = '';
-    if (!props.model.isThirdParty) {
-        apiKey = localStorage.getItem(ACTIVE_KEY_STORAGE_KEY) || '';
-        if (!apiKey) {
-          const apiKeys = JSON.parse(localStorage.getItem(API_KEYS_STORAGE_KEY) || '[]');
-          const activeKeyIndex = parseInt(localStorage.getItem(ACTIVE_KEY_INDEX_STORAGE_KEY) || '-1');
-
-          if (activeKeyIndex >= 0 && activeKeyIndex < apiKeys.length) {
-            apiKey = apiKeys[activeKeyIndex].key;
-            localStorage.setItem(ACTIVE_KEY_STORAGE_KEY, apiKey);
-          }
-        }
-    }
-
-    console.log('🔑 API密钥状态:', {
-      modelType: props.model.isThirdParty ? 'Third-Party' : 'FAL.AI',
-      hasActiveFalApiKey: !!apiKey,
-      keyLength: apiKey?.length ?? 0
-    });
-    if (!props.model.isThirdParty && !apiKey) {
-      toast.error('未设置FAL.AI API密钥', {
-        description: '请先在设置中添加并选择一个FAL.AI API密钥'
-      });
-      isGenerating.value = false;
+  // 检查必填参数
+  for (const param of props.model.inputSchema) {
+    if (isRequired(param) && !parameters.value[param.key] && param.key !== 'prompt') {
+      toast.error(`请填写必填参数: ${param.description || param.key}`);
       return;
     }
+  }
 
-    const response: GenerateImageResponse = await generateImage(props.model, allParameters, apiKey);
+  isGenerating.value = true;
+  generationResult.value = null;
 
-    if (response.success) {
-      const successResponse = response as SuccessResponse;
-      console.log("📥 收到生成响应:", {
-        imageCount: successResponse.images.length,
-        firstImageUrl: successResponse.images[0]?.url,
-        seed: successResponse.seed,
-        requestId: successResponse.requestId,
-      });
-      result.value = successResponse.images;
+  try {
+    const input: Record<string, any> = {
+      ...parameters.value,
+      prompt: prompt.value,
+    };
 
-      const savePromises = successResponse.images.map(async (image, index) => {
-        const newGeneration: Generation = {
-          id: uuidv4(),
-          modelId: props.model.id,
-          modelName: props.model.name,
-          prompt: prompt.value,
-          parameters: allParameters,
-          output: {
-            images: [image],
-            timings: successResponse.timings, // 直接使用，如果不存在则为 undefined
-            seed: successResponse.seed,
-            has_nsfw_concepts: successResponse.has_nsfw_concepts ?
-              [successResponse.has_nsfw_concepts[index] || false] : undefined, // 如果不存在则为 undefined
-          },
-          timestamp: Date.now(),
-          userId: currentUserId,
-          isCurrentUser: true
-        };
-        await saveGeneration(newGeneration);
-      });
-
-      await Promise.all(savePromises);
-
-      toast.success("图像生成成功", {
-        description: successResponse.seed ? `种子: ${successResponse.seed}` : undefined
-      });
-    } else {
-      const errorResponse = response as ErrorResponse;
-      console.error("✖️ 生成失败:", errorResponse.error);
-
-      if (errorResponse.errorCode === "ALL_KEYS_EXHAUSTED" || errorResponse.errorCode === "ALL_FAL_AI_KEYS_EXHAUSTED") {
-        toast.error("所有API密钥余额不足", {
-          description: "请添加新的API密钥或充值您的账户。"
-        });
-      } else if (errorResponse.errorCode === "CONTENT_BLOCKED" || errorResponse.errorCode === "NSFW_FILTERED") {
-         toast.error("生成失败", {
-           description: errorResponse.error
-         });
-      } else if (errorResponse.errorCode === "FAL_AI_BALANCE_EXHAUSTED") {
-         toast.warning("正在尝试切换密钥...", { duration: 2000 });
-      } else {
-        toast.error("生成失败", {
-          description: errorResponse.error || "请检查您的API密钥和网络连接"
-        });
+    // 构建消息格式
+    const messageContent: any[] = [
+      {
+        type: "text",
+        text: prompt.value
       }
-    }
-  } catch (error: any) {
-    console.error("❌ 处理生成请求时发生意外错误:", error);
-    toast.error("生成失败", {
-      description: error.message || "请检查您的API密钥和网络连接"
+    ];
+
+    // 添加图片
+    uploadedImages.value.forEach(image => {
+      messageContent.push({
+        type: "image_url",
+        image_url: {
+          url: image.base64
+        }
+      });
     });
+
+    input.messages = [
+      {
+        role: "user",
+        content: messageContent
+      }
+    ];
+
+    console.log('🚀 开始生成:', { model: props.model.id, input });
+    
+    const result = await generateImage(props.model, input);
+    generationResult.value = result;
+
+    if (result.success) {
+      toast.success('生成完成！');
+    } else {
+      toast.error(result.error || '生成失败');
+    }
+
+  } catch (error: any) {
+    console.error('生成过程出错:', error);
+    toast.error(error.message || '生成过程中发生错误');
+    generationResult.value = {
+      success: false,
+      error: error.message || '生成过程中发生错误'
+    };
   } finally {
     isGenerating.value = false;
   }
-}
+};
 
-const handleUpscaleImage = async (imageUrl: string) => {
-  console.log('⏫ 接收到超分请求:', imageUrl);
-  const apiKey = localStorage.getItem("fal-ai-active-key");
-   if (!apiKey) {
-       toast.error('未设置FAL.AI API密钥', {
-         description: '图像超分功能需要FAL.AI API密钥。'
-       });
-       return;
-   }
+// 清除结果
+const clearResult = () => {
+  generationResult.value = null;
+};
 
-  const upscaleToastId = toast.loading('正在进行图像超分...', {
-       description: '这可能需要一些时间，请耐心等待...'
-  });
-
+// 下载图片功能
+const handleDownload = async (imageUrl: string, filename: string = 'image.png') => {
   try {
-    const result = await upscaleImage(imageUrl, {
-      // checkpoint: 'v2',
-      // overlappingTiles: true,
-    });
+    // 检测是否为移动端
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
-    if (result.success) {
-      const upscaleOutput = result.output;
-      const requestId = result.requestId || uuidv4();
-
-      toast.success('图像超分完成！', {
-        id: upscaleToastId,
-        description: `请求 ID: ${requestId.substring(0,8)}...`
-      });
-
-      if (upscaleOutput && upscaleOutput.image && upscaleOutput.image.url) {
-          const recordToSave: Omit<SuperscaledImage, 'timestamp' | 'id'> & { requestId?: string } = {
-              originalImageUrl: imageUrl,
-              superscaledImageUrl: upscaleOutput.image.url,
-              upscaledWidth: upscaleOutput.image.width,
-              upscaledHeight: upscaleOutput.image.height,
-              requestId: requestId,
-              // checkpoint: options.checkpoint, // 如果需要保存，从 options 获取
-              // overlappingTiles: options.overlappingTiles, // 如果需要保存，从 options 获取
-          };
-
-          const saveResult = await saveSuperscaleRecord(recordToSave);
-
-          if (saveResult.success) {
-              console.log(`超分结果已保存到 Supabase: ${requestId}`);
-              toast.info('超分结果已保存，请前往“超分图片”页面查看。');
-          } else {
-              console.error('保存超分结果到 Supabase 失败:', saveResult.error);
-              toast.error('保存超分结果失败。');
-          }
-
+    if (imageUrl.startsWith('data:')) {
+      // 处理base64图片
+      if (isIOS) {
+        // iOS特殊处理
+        const link = document.createElement('a');
+        link.href = imageUrl;
+        link.download = filename;
+        
+        // 创建一个临时的图片元素
+        const img = new Image();
+        img.onload = () => {
+          // 创建canvas来转换图片
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx?.drawImage(img, 0, 0);
+          
+          // 转换为blob并下载
+          canvas.toBlob((blob) => {
+            if (blob) {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = filename;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            }
+          }, 'image/png');
+        };
+        img.src = imageUrl;
       } else {
-          console.error('超分成功但未返回有效图像数据');
-          toast.warning('超分完成但未获取到图像数据。', { id: upscaleToastId });
+        // 其他平台直接下载
+        const link = document.createElement('a');
+        link.href = imageUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       }
-
     } else {
-      toast.error('超分失败', {
-        id: upscaleToastId,
-        description: result.error || '未知错误'
-      });
-      if (result.errorCode === 'FAL_AI_BALANCE_EXHAUSTED' || result.errorCode === 'ALL_FAL_AI_KEYS_EXHAUSTED') {
-         toast.warning('FAL.AI 密钥余额不足，请检查或更换密钥。', { duration: 5000 });
-      }
+      // 处理网络图片
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     }
-  } catch (error: any) {
-     console.error('❌ 处理超分请求时发生意外错误:', error);
-     toast.error('处理超分请求时发生意外错误', {
-       id: upscaleToastId,
-       description: error.message || '请稍后再试'
-     });
+    
+    toast.success('图片下载成功！');
+  } catch (error) {
+    console.error('下载失败:', error);
+    toast.error('下载失败，请重试');
   }
 };
 
+// 渲染参数控件
+const renderParameterControl = (param: any) => {
+  const value = getParameterValue(param);
+  
+  switch (param.type) {
+    case 'string':
+      if (param.key === 'prompt') return null; // prompt单独处理
+      return 'input';
+    case 'number':
+      return 'slider';
+    case 'boolean':
+      return 'switch';
+    case 'enum':
+      return 'select';
+    default:
+      return 'input';
+  }
+};
 </script>
 
 <template>
-  <div class="flex flex-col space-y-8 w-full max-w-6xl mx-auto">
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <GenerationSettings
-        :prompt="prompt"
-        @update:prompt="prompt = $event"
-        @generate="handleGenerate"
-        :is-generating="isGenerating"
-        :model="model"
-        :parameters="parameters"
-        @update:parameters="parameters = $event"
-        @loadSettings="handleLoadSettings"
-      />
-      <ImageDisplay
-        :result="result"
-        :is-generating="isGenerating"
-        @upscale-image="handleUpscaleImage"
-      />
+  <div class="w-full max-w-6xl mx-auto space-y-6">
+    <!-- 主要生成区域 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- 左侧：输入控制区 -->
+      <div class="space-y-6">
+        <!-- 提示词输入 -->
+        <Card>
+          <CardHeader>
+            <CardTitle class="flex items-center gap-2">
+              <ImageIcon class="h-5 w-5" />
+              提示词
+            </CardTitle>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <div class="space-y-2">
+              <Label for="prompt">描述您想要生成的内容 *</Label>
+              <Textarea
+                id="prompt"
+                v-model="prompt"
+                placeholder="请输入详细的提示词描述..."
+                rows="4"
+                :disabled="isGenerating"
+                class="resize-none"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <!-- 图片上传 -->
+        <Card>
+          <CardHeader>
+            <CardTitle class="flex items-center gap-2">
+              <Upload class="h-5 w-5" />
+              图片上传
+              <Badge variant="secondary">可选</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <!-- 上传按钮 -->
+            <div class="flex items-center justify-center w-full">
+              <label
+                for="image-upload"
+                class="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-muted-foreground/25 rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
+                :class="{ 'pointer-events-none opacity-50': isGenerating }"
+              >
+                <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                  <Upload class="w-8 h-8 mb-2 text-muted-foreground" />
+                  <p class="mb-2 text-sm text-muted-foreground">
+                    <span class="font-semibold">点击上传</span> 或拖拽图片到此处
+                  </p>
+                  <p class="text-xs text-muted-foreground">支持 PNG, JPG, GIF (最大 10MB)</p>
+                </div>
+                <input
+                  id="image-upload"
+                  type="file"
+                  class="hidden"
+                  multiple
+                  accept="image/*"
+                  @change="handleFileUpload"
+                  :disabled="isGenerating"
+                />
+              </label>
+            </div>
+
+            <!-- 已上传的图片预览 -->
+            <div v-if="uploadedImages.length > 0" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div
+                v-for="(image, index) in uploadedImages"
+                :key="index"
+                class="relative group"
+              >
+                <div class="w-full h-20 bg-muted rounded-lg border overflow-hidden flex items-center justify-center">
+                  <img
+                    :src="image.url"
+                    :alt="`上传的图片 ${index + 1}`"
+                    class="max-w-full max-h-full object-contain"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  class="absolute -top-2 -right-2 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                  @click="removeImage(index)"
+                  :disabled="isGenerating"
+                >
+                  <X class="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <!-- 动态参数配置 - 仅对非Gemini模型显示 -->
+        <Card v-if="!model.id.includes('gemini')">
+          <CardHeader>
+            <CardTitle class="flex items-center gap-2">
+              <Settings class="h-5 w-5" />
+              参数配置
+            </CardTitle>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <div
+              v-for="param in model.inputSchema.filter(p => p.key !== 'prompt' && p.key !== 'messages')"
+              :key="param.key"
+              class="space-y-2"
+            >
+              <div class="flex items-center justify-between">
+                <Label :for="param.key" class="text-sm font-medium">
+                  {{ param.description || param.key }}
+                  <span v-if="isRequired(param)" class="text-destructive">*</span>
+                </Label>
+                <Badge v-if="param.default !== undefined" variant="outline" class="text-xs">
+                  默认: {{ param.default }}
+                </Badge>
+              </div>
+
+              <!-- 字符串输入 -->
+              <Input
+                v-if="renderParameterControl(param) === 'input'"
+                :id="param.key"
+                :value="getParameterValue(param)"
+                @input="updateParameter(param.key, ($event.target as HTMLInputElement).value)"
+                :placeholder="param.description"
+                :disabled="isGenerating"
+              />
+
+              <!-- 数字滑块 -->
+              <div v-else-if="renderParameterControl(param) === 'slider'" class="space-y-2">
+                <div class="flex items-center justify-between text-sm">
+                  <span>{{ getParameterValue(param) }}</span>
+                  <span class="text-muted-foreground">
+                    {{ param.validation?.min || 0 }} - {{ param.validation?.max || 100 }}
+                  </span>
+                </div>
+                <Slider
+                  :model-value="[getParameterValue(param)]"
+                  @update:model-value="(value) => updateParameter(param.key, value?.[0] || 0)"
+                  :min="param.validation?.min || 0"
+                  :max="param.validation?.max || (param.key === 'max_tokens' ? 4000 : param.key === 'temperature' ? 2 : 100)"
+                  :step="param.key === 'temperature' ? 0.1 : 1"
+                  :disabled="isGenerating"
+                  class="w-full"
+                />
+              </div>
+
+              <!-- 开关 -->
+              <div v-else-if="renderParameterControl(param) === 'switch'" class="flex items-center space-x-2">
+                <Switch
+                  :id="param.key"
+                  :checked="getParameterValue(param)"
+                  @update:checked="updateParameter(param.key, $event)"
+                  :disabled="isGenerating"
+                />
+                <Label :for="param.key" class="text-sm">
+                  {{ getParameterValue(param) ? '开启' : '关闭' }}
+                </Label>
+              </div>
+
+              <!-- 选择器 -->
+              <Select
+                v-else-if="renderParameterControl(param) === 'select'"
+                :value="getParameterValue(param)"
+                @update:value="updateParameter(param.key, $event)"
+                :disabled="isGenerating"
+              >
+                <SelectTrigger>
+                  <SelectValue :placeholder="`选择${param.description || param.key}`" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    v-for="(option, optionIndex) in param.options"
+                    :key="optionIndex"
+                    :value="String(option)"
+                  >
+                    {{ option }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        <!-- 生成按钮 -->
+        <div class="flex gap-3">
+          <Button 
+            @click="handleGenerate" 
+            :disabled="isGenerating || !prompt.trim()"
+            class="flex-1"
+            size="lg"
+          >
+            <Loader2 v-if="isGenerating" class="mr-2 h-4 w-4 animate-spin" />
+            {{ isGenerating ? '生成中...' : '开始生成' }}
+          </Button>
+          
+          <Button 
+            v-if="generationResult" 
+            @click="clearResult" 
+            variant="outline"
+            :disabled="isGenerating"
+            size="lg"
+          >
+            清除结果
+          </Button>
+        </div>
+      </div>
+
+      <!-- 右侧：结果展示区 -->
+      <div class="space-y-6">
+        <!-- 生成结果 -->
+        <Card v-if="generationResult" class="min-h-[400px]">
+          <CardHeader>
+            <CardTitle>生成结果</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <!-- 成功结果 -->
+            <div v-if="generationResult.success" class="space-y-6">
+              <!-- 图片对比或单独显示 -->
+              <div v-if="generationResult.images && generationResult.images.length > 0">
+                <!-- 如果有上传的图片，显示对比效果 -->
+                <div v-if="uploadedImages.length > 0 && generationResult.images.length > 0">
+                  <ImageComparison
+                    :originalImage="uploadedImages[0].url"
+                    :generatedImage="generationResult.images[0].url"
+                    @download="handleDownload"
+                  />
+                </div>
+                <!-- 如果没有上传图片，只显示生成的图片 -->
+                <div v-else class="space-y-4">
+                  <div 
+                    v-for="(image, index) in generationResult.images" 
+                    :key="index"
+                    class="relative group"
+                  >
+                    <div class="w-full max-w-2xl mx-auto bg-muted rounded-lg border overflow-hidden flex items-center justify-center min-h-[300px]">
+                      <img 
+                        :src="image.url" 
+                        :alt="`生成的图像 ${index + 1}`"
+                        class="max-w-full max-h-full object-contain shadow-md"
+                        loading="lazy"
+                      />
+                    </div>
+                    <!-- 下载按钮 -->
+                    <Button
+                      @click="handleDownload(image.url, `generated-image-${index + 1}.png`)"
+                      class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                      size="sm"
+                      variant="secondary"
+                    >
+                      <Download class="h-4 w-4 mr-1" />
+                      下载
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 错误结果 -->
+            <div v-else class="space-y-3">
+              <Label class="text-base font-semibold text-destructive">生成失败</Label>
+              <div class="p-4 bg-destructive/10 text-destructive rounded-lg border border-destructive/20">
+                <div class="text-sm">{{ generationResult.error }}</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <!-- 空状态 -->
+        <Card v-else class="min-h-[400px] flex items-center justify-center">
+          <div class="text-center text-muted-foreground">
+            <ImageIcon class="h-16 w-16 mx-auto mb-4 opacity-50" />
+            <p class="text-lg font-medium mb-2">等待生成</p>
+            <p class="text-sm">输入提示词并点击生成按钮开始</p>
+          </div>
+        </Card>
+      </div>
     </div>
   </div>
 </template>

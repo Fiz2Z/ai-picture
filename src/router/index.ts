@@ -9,7 +9,7 @@ const routes: RouteRecordRaw[] = [
     name: 'Home',
     component: () => import('@/views/Home.vue'),
     meta: {
-      title: 'Fal.AI Studio' // 首页标题
+      title: 'AI Picture' // 首页标题
     }
   },
   {
@@ -17,24 +17,8 @@ const routes: RouteRecordRaw[] = [
     name: 'Models',
     component: () => import('@/views/ModelsPage.vue'),
     meta: {
-      title: '所有模型 - Fal.AI Studio' // 修改标题，保持一致性
+      title: '所有模型 - AI Picture' // 修改标题，保持一致性
     }
-  },
-  {
-    path: '/history',
-    name: 'History',
-    component: () => import('@/views/HistoryPage.vue'),
-    meta: {
-      title: '生成历史 - Fal.AI Studio' // 修改标题，保持一致性
-    }
-  },
-  // --- 新增：超分图片页面的路由 ---
-  {
-    path: '/superscale',
-    name: 'Superscale',
-    // 我们稍后会创建这个组件
-    component: () => import('@/views/SuperscalePage.vue'),
-    meta: { title: '超分图片 - Fal.AI Studio' } // 新页面的标题
   },
   // 动态添加所有模型路由
   ...modelRoutes,
@@ -62,7 +46,7 @@ const router = createRouter({
 // 全局前置守卫 - 设置页面标题
 router.beforeEach((to, _from, next) => {
   // 设置页面标题，使用更健壮的方式
-  const defaultTitle = 'Fal.AI Studio';
+  const defaultTitle = 'AI Picture';
   document.title = (to.meta.title as string) || defaultTitle;
   next();
 });

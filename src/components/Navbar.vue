@@ -3,9 +3,8 @@ import { computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { RouterLink } from 'vue-router';
 import { Button } from '@/components/ui/button';
-import ApiKeyManager from './ApiKeyManager.vue';
 import NavbarSheet from './NavbarSheet.vue';
-import ClearCacheButton from './ClearCacheButton.vue';
+import ThemeToggle from './ThemeToggle.vue';
 
 // 导航项
 const navItems = [
@@ -16,15 +15,6 @@ const navItems = [
   {
     href: "/models",
     label: "所有模型",
-  },
-  {
-    href: "/history",
-    label: "生成历史",
-  },
-    // --- 新增：超分图片菜单项 ---
-    {
-    href: "/superscale", // 新页面的路由路径
-    label: "超分图片",
   },
 ];
 
@@ -47,8 +37,8 @@ const isActive = (path: string) => {
       <!-- Logo & 品牌 -->
       <div class="flex items-center gap-2">
         <RouterLink to="/" class="font-bold text-xl flex items-center gap-2">
-          <img src="/logo.svg" alt="FAL.AI Logo" class="h-8 w-8" />
-          <span class="hidden sm:inline-block">Fal.AI</span>
+          <img src="/logo.svg" alt="AI Picture Logo" class="h-8 w-8" />
+          <span class="hidden sm:inline-block">AI Picture</span>
         </RouterLink>
       </div>
 
@@ -70,12 +60,9 @@ const isActive = (path: string) => {
 
       <!-- 右侧操作区域 -->
       <div class="flex items-center gap-2">
-        <!-- API密钥管理 -->
-        <ApiKeyManager />
-
-        <!-- 清除缓存按钮 -->
-        <ClearCacheButton />
-
+        <!-- 主题切换按钮 -->
+        <ThemeToggle />
+        
         <!-- 移动端菜单按钮 -->
         <div class="md:hidden">
           <NavbarSheet :navItems="navItems" />

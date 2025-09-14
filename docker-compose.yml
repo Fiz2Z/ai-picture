@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  ai-app:
+    build: .
+    ports:
+      - "80:80"
+    environment:
+      # OpenRouter API配置
+      - VITE_OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      # 网站信息（用于OpenRouter排名）
+      - VITE_SITE_URL=${SITE_URL:-http://localhost}
+      - VITE_SITE_NAME=${SITE_NAME:-AI Multimodal App}
+      # Supabase配置（如果需要）
+      - VITE_SUPABASE_URL=${SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

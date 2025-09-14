@@ -1,53 +1,134 @@
-# FalAI 图像生成应用
+# AI 多模态应用
 
-FalAI 是一个基于 [FAL.AI](https://fal.ai/) API 的高级图像生成应用，提供直观的用户界面，让用户能够轻松创建、管理和分享 AI 生成的图像。该应用采用 Vue 3 和 ShadcnUI 构建，支持响应式设计，确保在桌面端和移动端都有出色的用户体验。
-
-![FalAI 应用截图](https://cdn.ldstatic.com/optimized/4X/7/7/3/7732c03de520187cd842164a6d13baf8d4213c29_2_1350x998.jpeg)
+这是一个基于 OpenRouter API 的多模态 AI 应用，支持文本生成和图像理解功能。该应用采用 Vue 3 和 ShadcnUI 构建，支持响应式设计，确保在桌面端和移动端都有出色的用户体验。
 
 ## 🌟 主要特点
 
-- **多模型支持**：集成了多种 FAL.AI 图像生成模型，包括 Flux Pro、Flux Pro Ultra 和 LoRA 模型
-- **高级提示词工具**：内置 AI 提示词增强和标签结构化功能，帮助用户创建更有效的提示词
-- **自定义设置**：支持保存和加载自定义生成设置，提高工作效率
-- **生成历史**：完整的生成历史记录，支持分页浏览、搜索和筛选
-- **API 密钥管理**：灵活的 API 密钥管理系统，支持多密钥配置和自动切换
+- **多模态支持**：集成 OpenRouter 的多模态模型，支持文本和图像输入
+- **可扩展架构**：支持多渠道多模型，方便后续添加不同的 AI 模型
+- **环境变量配置**：通过 Docker 环境变量进行配置，无需复杂的密钥管理
 - **响应式设计**：完美适配桌面端和移动端设备
-- **优化的图像显示**：支持多图预览、懒加载和渐进式加载
-- **NSFW 内容管理**：内置 NSFW 内容检测和模糊处理
+- **现代化UI**：基于 ShadcnUI 构建的现代化用户界面
 
 ## 🚀 功能亮点
 
-### 图像生成
+### 多模态交互
 
-- 支持多种图像尺寸和宽高比
-- 可调整的生成参数（步数、引导系数等）
-- 支持一次生成多张图片（最多 4 张）
-- 实时显示生成进度和加载状态
-- 支持 LoRA 模型的权重调整
+- 支持纯文本输入进行对话
+- 支持图像+文本输入进行图像理解
+- 可调整的生成参数（温度、最大令牌数等）
+- 实时显示 API 使用统计
 
-### 提示词工具
+### 模型管理
 
-- AI 提示词增强功能，基于 Claude 3.7 Sonnet 模型
-- 提示词标签结构化工具，优化生成效果
-- 提示词输入建议和最佳实践提示
+- 当前支持 Google Gemini 2.5 Flash Image Preview 模型
+- 可扩展的模型注册系统，方便添加新模型
+- 支持不同提供商的模型集成
 
-### 图像管理
+## 🐳 Docker 部署
 
-- 缩略图预览行，便于浏览多张生成的图片
-- 按原始比例显示图片，保持图像完整性
-- 一键下载生成的图片
-- 详细的图像元数据显示（尺寸、种子值等）
+### 环境变量配置
 
-### 历史记录
+创建 `.env` 文件并配置以下环境变量：
 
-- 完整的生成历史浏览功能
-- 支持按模型和提示词搜索
-- 分页功能，支持浏览大量历史记录
-- 图片预览和详细信息查看
+```bash
+# OpenRouter API配置
+VITE_OPENROUTER_API_KEY=your_openrouter_api_key_here
 
-### API 密钥管理
+# 网站信息（用于OpenRouter排名）
+VITE_SITE_URL=http://localhost:5173
+VITE_SITE_NAME=AI Image Generator
 
-- 支持添加和管理多个 FAL.AI API 密钥
+# Supabase配置（如果需要）
+VITE_SUPABASE_URL=your_supabase_url_here
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key_here
+```
+
+### 构建和运行
+
+```bash
+# 构建 Docker 镜像
+docker build -t ai-multimodal-app .
+
+# 运行容器
+docker run -d \
+  --name ai-app \
+  -p 80:80 \
+  --env-file .env \
+  ai-multimodal-app
+```
+
+### Docker Compose
+
+创建 `docker-compose.yml` 文件：
+
+```yaml
+version: '3.8'
+services:
+  ai-app:
+    build: .
+    ports:
+      - "80:80"
+    env_file:
+      - .env
+    restart: unless-stopped
+```
+
+然后运行：
+
+```bash
+docker-compose up -d
+```
+
+## 🛠️ 本地开发
+
+### 安装依赖
+
+```bash
+pnpm install
+```
+
+### 开发服务器
+
+```bash
+pnpm dev
+```
+
+### 构建生产版本
+
+```bash
+pnpm build
+```
+
+## 🔧 添加新模型
+
+要添加新的模型，请按以下步骤操作：
+
+1. 在 `src/lib/models/` 下创建新的提供商目录（如 `anthropic/`）
+2. 在该目录下创建模型定义文件
+3. 在 `src/lib/models/registry.ts` 中注册新模型
+4. 在 `src/services/` 中添加对应的 API 客户端
+5. 更新 `src/services/generate-image.ts` 以支持新提供商
+
+### 模型定义示例
+
+```typescript
+import type { Model } from "@/types/flux";
+
+export const new_model: Model = {
+  name: "新模型名称",
+  id: "provider/model-id",
+  description: "模型描述",
+  provider: "provider_name",
+  category: "模型分类",
+  inputSchema: [
+    // 定义输入参数
+  ],
+  outputSchema: [
+    // 定义输出格式
+  ]
+};
+```
 - 密钥分组功能，便于组织管理
 - 一键测试密钥可用性
 - 当密钥余额不足时自动切换到下一个可用密钥

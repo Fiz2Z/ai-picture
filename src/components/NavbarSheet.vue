@@ -102,7 +102,7 @@ const closeSheet = () => {
           <!-- 其他链接可以在这里添加 -->
           <div class="pt-4 border-t">
             <div class="text-sm text-muted-foreground">
-              使用 Fal.AI 生成您的图像
+              使用 AI Picture 生成您的图像
             </div>
           </div>
         </nav>

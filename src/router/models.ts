@@ -11,7 +11,7 @@ export const modelRoutes: RouteRecordRaw[] = allModels.map(model => {
     component: () => import('@/views/FluxModelPage.vue'),
     props: { modelId: routeId },
     meta: {
-      title: `${model.name} - FAL.AI`,
+      title: `${model.name} - AI Picture`,
       model
     }
   };
@@ -23,5 +23,5 @@ export function getModelById(id: string) {
   return allModels.find(model => model.id.replace(/\//g, '-') === id);
 }
 
-// **重新导出 modelCategories**
-export { modelCategories };
+// **重新导出 modelCategories 和 allModels**
+export { modelCategories, allModels };
