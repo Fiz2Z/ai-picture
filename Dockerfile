@@ -2,14 +2,11 @@
 FROM node:18-alpine AS builder
 WORKDIR /app
 
-# 安装 pnpm
-RUN npm i -g pnpm
-
 # 复制依赖文件
-COPY package.json pnpm-lock.yaml ./
+COPY package.json package-lock.json* ./
 
 # 安装依赖
-RUN pnpm install --frozen-lockfile
+RUN npm ci --only=production=false
 
 # 复制源码文件 (排除不必要的文件)
 COPY src ./src
@@ -21,7 +18,7 @@ COPY tailwind.config.ts ./
 COPY components.json ./
 
 # 构建生产文件
-RUN pnpm build
+RUN npm run build
 
 # 2. 生产阶段：使用 nginx 服务器部署静态文件
 FROM nginx:stable-alpine
