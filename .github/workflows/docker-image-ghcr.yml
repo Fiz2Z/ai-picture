@@ -27,4 +27,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/yuucccc/falapp:latest  # 必须全小写
+          tags: ghcr.io/fiz2z/ai-picture:latest  # 必须全小写
