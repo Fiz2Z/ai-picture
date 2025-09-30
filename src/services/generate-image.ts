@@ -236,22 +236,26 @@ export async function generateImage(
     if (model.provider === 'image-upscale') {
       console.log('📝 检测到图片高清化模型，准备调用无损放大接口');
 
-      const hasUploadedImages = Array.isArray(input.uploadedImages) && input.uploadedImages.length > 0;
-      if (!hasUploadedImages) {
+      const uploadedEntries = Array.isArray(input.uploadedImages) ? input.uploadedImages : [];
+      if (uploadedEntries.length === 0) {
         return {
           success: false,
           error: '请先上传需要高清化的图?',
         };
       }
 
-      const file: File | undefined = input.uploadedImages
+      const file: File | undefined = uploadedEntries
         .map((item: any) => item.file)
         .find((candidate: File | undefined): candidate is File => Boolean(candidate));
 
-      if (!file) {
+      const imageUrl: string | undefined = uploadedEntries
+        .map((item: any) => item.url)
+        .find((candidate: unknown): candidate is string => typeof candidate === 'string' && candidate.trim() !== '');
+
+      if (!file && !imageUrl) {
         return {
           success: false,
-          error: '未找到可用的图片文件',
+          error: '未找到可用的图片文件或链接',
         };
       }
 
@@ -267,7 +271,8 @@ export async function generateImage(
         }
 
         const upscaleResult = await callImageUpscale({
-          file,
+          ...(file ? { file } : {}),
+          ...(imageUrl ? { image_url: imageUrl } : {}),
           type: typeValue === 'auto' ? undefined : typeValue,
           scale_factor: scaleFactor,
         });

@@ -25,8 +25,12 @@ const generationResult = ref<GenerateImageResponse | null>(null);
 
 // 基础输入参数
 const prompt = ref('');
-const uploadedImages = ref<Array<{ file: File; url: string; base64: string }>>([]);
+const uploadedImages = ref<Array<{ file?: File; url?: string; base64?: string }>>([]);
 const isEditingMode = computed(() => uploadedImages.value.length > 0);
+const firstUploadedImageUrl = computed(() => {
+  const url = uploadedImages.value[0]?.url;
+  return typeof url === 'string' ? url : '';
+});
 
 const shouldDisplayParameter = (param: ModelParameter) => {
   if (props.model.id === 'qwen-image' && isEditingMode.value && param.key === 'size') {
@@ -123,7 +127,9 @@ const fileToBase64 = (file: File): Promise<string> => {
 // 删除上传的图片
 const removeImage = (index: number) => {
   const image = uploadedImages.value[index];
-  URL.revokeObjectURL(image.url);
+  if (image?.url && image.url.startsWith('blob:')) {
+    URL.revokeObjectURL(image.url);
+  }
   uploadedImages.value.splice(index, 1);
 };
 
@@ -143,7 +149,11 @@ const initParameters = () => {
 // 监听模型变化
 watch(() => props.model, () => {
   prompt.value = '';
-  uploadedImages.value.forEach(img => URL.revokeObjectURL(img.url));
+  uploadedImages.value.forEach(img => {
+    if (img?.url && img.url.startsWith('blob:')) {
+      URL.revokeObjectURL(img.url);
+    }
+  });
   uploadedImages.value = [];
   generationResult.value = null;
   upscalingState.value = {};
@@ -296,10 +306,27 @@ const setUpscalingState = (index: number, value: boolean) => {
 const isUpscaling = (index: number) => upscalingState.value[index] === true;
 
 const imageUrlToFile = async (imageUrl: string): Promise<File> => {
-  const response = await fetch(imageUrl);
-  const blob = await response.blob();
-  const extension = blob.type?.split('/')?.[1] || 'png';
-  return new File([blob], `image-${Date.now()}.${extension}`, { type: blob.type || 'image/png' });
+  try {
+    const isDataUrl = imageUrl.startsWith('data:');
+    const isBlobUrl = imageUrl.startsWith('blob:');
+    const fetchOptions: RequestInit = {};
+
+    if (!isDataUrl && !isBlobUrl) {
+      fetchOptions.mode = 'cors';
+    }
+
+    const response = await fetch(imageUrl, fetchOptions);
+    if (!response.ok) {
+      throw new Error(`status ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const extension = blob.type?.split('/')?.[1] || 'png';
+    return new File([blob], `image-${Date.now()}.${extension}`, { type: blob.type || 'image/png' });
+  } catch (error) {
+    console.error('无法转换图片到文件', error);
+    throw new Error('无法直接获取该图片，请先下载后重新上传再进行高清化。');
+  }
 };
 
 const handleUpscale = async (imageUrl: string, index: number) => {
@@ -311,15 +338,22 @@ const handleUpscale = async (imageUrl: string, index: number) => {
   try {
     setUpscalingState(index, true);
 
-    const file = await imageUrlToFile(imageUrl);
-    const base64 = imageUrl.startsWith('data:') ? imageUrl : await fileToBase64(file);
+    const isRemoteUrl = /^https?:\/\//i.test(imageUrl);
+
+    let file: File | undefined;
+    let base64: string | undefined;
+
+    if (!isRemoteUrl) {
+      file = await imageUrlToFile(imageUrl);
+      base64 = imageUrl.startsWith('data:') ? imageUrl : await fileToBase64(file);
+    }
 
     const result = await generateImage(upscaleModel.value, {
       uploadedImages: [
         {
-          file,
           url: imageUrl,
-          base64,
+          ...(file ? { file } : {}),
+          ...(base64 ? { base64 } : {}),
         },
       ],
     });
@@ -366,29 +400,34 @@ const handleUpscale = async (imageUrl: string, index: number) => {
 // 下载图片功能
 const handleDownload = async (imageUrl: string, filename: string = 'image.png') => {
   try {
-    // 检测是否为移动端
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
+    const openInNewTab = () => {
+      const link = document.createElement('a');
+      link.href = imageUrl;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.info('图片已在新标签页打开，请使用浏览器的“另存为”功能保存。');
+    };
+
     if (imageUrl.startsWith('data:')) {
-      // 处理base64图片
       if (isIOS) {
-        // iOS特殊处理
         const link = document.createElement('a');
         link.href = imageUrl;
         link.download = filename;
-        
-        // 创建一个临时的图片元素
+
         const img = new Image();
         img.onload = () => {
-          // 创建canvas来转换图片
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
           canvas.width = img.width;
           canvas.height = img.height;
           ctx?.drawImage(img, 0, 0);
-          
-          // 转换为blob并下载
+
           canvas.toBlob((blob) => {
             if (blob) {
               const url = URL.createObjectURL(blob);
@@ -404,7 +443,6 @@ const handleDownload = async (imageUrl: string, filename: string = 'image.png') 
         };
         img.src = imageUrl;
       } else {
-        // 其他平台直接下载
         const link = document.createElement('a');
         link.href = imageUrl;
         link.download = filename;
@@ -412,12 +450,20 @@ const handleDownload = async (imageUrl: string, filename: string = 'image.png') 
         link.click();
         document.body.removeChild(link);
       }
-    } else {
-      // 处理网络图片
-      const response = await fetch(imageUrl);
+
+      toast.success('图片下载成功！');
+      return;
+    }
+
+    try {
+      const response = await fetch(imageUrl, { mode: 'cors' });
+      if (!response.ok) {
+        throw new Error(`download failed: status ${response.status}`);
+      }
+
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
-      
+
       const link = document.createElement('a');
       link.href = url;
       link.download = filename;
@@ -425,9 +471,16 @@ const handleDownload = async (imageUrl: string, filename: string = 'image.png') 
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+
+      toast.success('图片下载成功！');
+    } catch (networkError) {
+      console.warn('跨域下载失败，尝试在新标签打开', networkError);
+      if (/^https?:/i.test(imageUrl)) {
+        openInNewTab();
+        return;
+      }
+      throw networkError;
     }
-    
-    toast.success('图片下载成功！');
   } catch (error) {
     console.error('下载失败:', error);
     toast.error('下载失败，请重试');
@@ -701,9 +754,9 @@ const renderParameterControl = (param: any) => {
               </div>
               <div v-else-if="generationResult.images && generationResult.images.length > 0">
                 <!-- 如果有上传的图片，显示对比效果 -->
-                <div v-if="uploadedImages.length > 0 && generationResult.images.length > 0">
+                <div v-if="uploadedImages.length > 0 && generationResult.images.length > 0 && firstUploadedImageUrl">
                   <ImageComparison
-                    :originalImage="uploadedImages[0].url"
+                    :originalImage="firstUploadedImageUrl"
                     :generatedImage="generationResult.images[0].url"
                     @download="handleDownload"
                   />

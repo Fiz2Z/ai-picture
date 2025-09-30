@@ -2,7 +2,8 @@ import axios from 'axios';
 import { ENV } from '@/utils/env';
 
 interface UpscaleOptions {
-  file: File;
+  file?: File;
+  image_url?: string;
   type?: string;
   scale_factor?: number | string;
 }
@@ -41,7 +42,21 @@ export async function callImageUpscale(options: UpscaleOptions): Promise<Upscale
   const { baseURL, apiKey } = getConfig();
 
   const formData = new FormData();
-  formData.append('image_file', options.file, options.file.name);
+  const hasFile = options.file instanceof File;
+  const hasImageUrl = typeof options.image_url === 'string' && options.image_url.trim() !== '';
+
+  if (!hasFile && !hasImageUrl) {
+    throw new Error('高清化请求需要提供图片文件或图片链接');
+  }
+
+  if (hasFile) {
+    formData.append('image_file', options.file as File, options.file!.name);
+  }
+
+  if (hasImageUrl) {
+    formData.append('image_url', options.image_url!.trim());
+  }
+
   formData.append('sync', '1');
 
   const typeValue = typeof options.type === 'string' ? options.type.trim() : '';
