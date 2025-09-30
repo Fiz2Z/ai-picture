@@ -244,15 +244,10 @@ export async function generateImage(
         };
       }
 
-      const file: File | undefined = uploadedEntries
-        .map((item: any) => item.file)
-        .find((candidate: File | undefined): candidate is File => Boolean(candidate));
+      const fileEntry = uploadedEntries.find((item: any) => item.file instanceof File);
+      const urlEntry = uploadedEntries.find((item: any) => typeof item.url === 'string' && item.url.trim() !== '');
 
-      const imageUrl: string | undefined = uploadedEntries
-        .map((item: any) => item.url)
-        .find((candidate: unknown): candidate is string => typeof candidate === 'string' && candidate.trim() !== '');
-
-      if (!file && !imageUrl) {
+      if (!fileEntry && !urlEntry) {
         return {
           success: false,
           error: '未找到可用的图片文件或链接',
@@ -270,12 +265,23 @@ export async function generateImage(
           scaleFactor = Number.isFinite(parsed) ? parsed : undefined;
         }
 
-        const upscaleResult = await callImageUpscale({
-          ...(file ? { file } : {}),
-          ...(imageUrl ? { image_url: imageUrl } : {}),
+        const upscalePayload: {
+          file?: File;
+          image_url?: string;
+          type?: string;
+          scale_factor?: number;
+        } = {
           type: typeValue === 'auto' ? undefined : typeValue,
           scale_factor: scaleFactor,
-        });
+        };
+
+        if (fileEntry?.file) {
+          upscalePayload.file = fileEntry.file;
+        } else if (urlEntry?.url) {
+          upscalePayload.image_url = urlEntry.url;
+        }
+
+        const upscaleResult = await callImageUpscale(upscalePayload);
 
         const { data } = upscaleResult;
 

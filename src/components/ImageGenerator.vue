@@ -780,7 +780,7 @@ const renderParameterControl = (param: any) => {
                     <Button
                       v-if="hasUpscaleModel"
                       @click="handleUpscale(image.url, index)"
-                      class="absolute top-2 left-2 flex items-center gap-1 rounded-full bg-primary text-primary-foreground px-3 py-1 opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-md shadow-primary/40 hover:-translate-y-0.5"
+                      class="absolute top-2 left-2 flex items-center gap-1 rounded-full bg-primary text-primary-foreground px-3 py-1 transition-all duration-200 shadow-md shadow-primary/40 hover:-translate-y-0.5"
                       size="sm"
                       variant="default"
                       :disabled="isUpscaling(index)"
@@ -795,7 +795,7 @@ const renderParameterControl = (param: any) => {
                     <!-- 下载按钮 -->
                     <Button
                       @click="handleDownload(image.url, `generated-image-${index + 1}.png`)"
-                      class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                      class="absolute top-2 right-2"
                       size="sm"
                       variant="secondary"
                     >
