@@ -72,6 +72,9 @@ export interface Model {
     requiresImage?: boolean;
     hideParameters?: boolean;
     hidePrompt?: boolean;
+    generationDefaults?: Record<string, unknown>;
+    editDefaults?: Record<string, unknown>;
+    editModelId?: string;
   };
 }
 

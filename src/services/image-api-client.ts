@@ -25,6 +25,11 @@ export interface ImageGenerationRequest {
   output_format?: 'png' | 'jpeg' | 'webp';
   background?: 'transparent' | 'opaque' | 'auto';
   output_compression?: number;
+  response_format?: 'url' | 'b64_json';
+  watermark?: boolean;
+  seed?: number;
+  prompt_upsampling?: boolean;
+  safety_tolerance?: number;
 }
 
 export interface ImageGenerationItem {
@@ -92,6 +97,12 @@ export interface ImageEditRequestOptions {
   n?: number;
   size?: string;
   background?: 'auto' | 'transparent' | 'opaque';
+  response_format?: 'url' | 'b64_json';
+  watermark?: boolean;
+  output_format?: 'png' | 'jpeg';
+  seed?: number;
+  prompt_upsampling?: boolean;
+  safety_tolerance?: number;
 }
 
 export async function callImageEdit(
@@ -123,8 +134,32 @@ export async function callImageEdit(
     formData.append('size', options.size);
   }
 
+  if (options.output_format) {
+    formData.append('output_format', options.output_format);
+  }
+
+  if (typeof options.seed === 'number' && Number.isFinite(options.seed)) {
+    formData.append('seed', String(Math.floor(options.seed)));
+  }
+
+  if (typeof options.prompt_upsampling === 'boolean') {
+    formData.append('prompt_upsampling', String(options.prompt_upsampling));
+  }
+
+  if (typeof options.safety_tolerance === 'number' && Number.isFinite(options.safety_tolerance)) {
+    formData.append('safety_tolerance', String(Math.floor(options.safety_tolerance)));
+  }
+
   if (options.background) {
     formData.append('background', options.background);
+  }
+
+  if (options.response_format) {
+    formData.append('response_format', options.response_format);
+  }
+
+  if (typeof options.watermark === 'boolean') {
+    formData.append('watermark', String(options.watermark));
   }
 
   const response = await axios.post<ImageEditResponse>(

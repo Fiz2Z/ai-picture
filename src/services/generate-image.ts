@@ -2,12 +2,38 @@ import type { Model, GenerateImageResponse } from '@/types/flux';
 import { callImageEdit, callImageGenerate } from './image-api-client';
 import { callImageUpscale } from './upscale-image';
 
+const normalizeSeedValue = (value: unknown): number | undefined => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.floor(value);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+
+    const parsed = Number(trimmed);
+    if (Number.isFinite(parsed)) {
+      return Math.floor(parsed);
+    }
+
+    return undefined;
+  }
+
+  return undefined;
+};
+
 export async function generateImage(
   model: Model,
   input: Record<string, any>
 ): Promise<GenerateImageResponse> {
   
-  console.log('🚀 开始图像生成请求:', { model: model.id, input });
+  console.log('🚀 开始图像生成请求', { model: model.id, input });
 
   try {
     if (model.provider === 'image-api') {
@@ -17,12 +43,14 @@ export async function generateImage(
         ? input.uploadedImages.map((item: any) => item?.file?.name).filter(Boolean)
         : [];
 
-      console.log('📎 上传的图片信息:', filenames);
+      console.log('📎 上传的图片信息', filenames);
 
       const hasUploadedImages = Array.isArray(input.uploadedImages) && input.uploadedImages.length > 0;
       const meta = model.meta || {};
       const generationParams: string[] = Array.isArray(meta.generationParams) ? meta.generationParams : [];
       const editParams: string[] = Array.isArray(meta.editParams) ? meta.editParams : [];
+      const generationDefaults = (meta.generationDefaults ?? {}) as Record<string, unknown>;
+      const editDefaults = (meta.editDefaults ?? {}) as Record<string, unknown>;
 
       if (meta.requiresPrompt !== false && !input.prompt) {
         return {
@@ -46,11 +74,36 @@ export async function generateImage(
             return acc;
           }, {});
 
+          const editModelId = typeof meta.editModelId === 'string' && meta.editModelId.trim()
+            ? meta.editModelId
+            : model.id;
+
+          const editIncludesSize = editParams.includes('size');
+          const { size_tier: editSizeTier, size: editSizeValue, ...restEditOptions } = allowedEditOptions as Record<string, any>;
+          const resolvedEditSize = editIncludesSize
+            ? ((typeof editSizeValue === 'string' && editSizeValue.trim())
+              || (typeof editSizeTier === 'string' && editSizeTier.trim())
+              || (editDefaults.size as string)
+              || (generationDefaults.size as string))
+            : undefined;
+
+          const sanitizedEditOptions = { ...restEditOptions } as Record<string, any>;
+          if ('seed' in sanitizedEditOptions) {
+            const normalizedSeed = normalizeSeedValue(sanitizedEditOptions.seed);
+            if (normalizedSeed === undefined) {
+              delete sanitizedEditOptions.seed;
+            } else {
+              sanitizedEditOptions.seed = normalizedSeed;
+            }
+          }
+
           const editResponse = await callImageEdit({
-            modelId: model.id,
+            modelId: editModelId,
             prompt: input.prompt,
             images: editImages,
-            ...(allowedEditOptions as { n?: number; size?: string; background?: 'auto' | 'transparent' | 'opaque' }),
+            ...(editDefaults as Record<string, unknown>),
+            ...sanitizedEditOptions,
+            ...(resolvedEditSize ? { size: resolvedEditSize } : {}),
           });
 
           const images = editResponse.data
@@ -105,15 +158,26 @@ export async function generateImage(
           return acc;
         }, {});
 
+        const { size_tier, size: generationSizeValue, ...restGenerationOptions } = allowedGenerationOptions as Record<string, any>;
+        const resolvedGenerationSize = (typeof generationSizeValue === 'string' && generationSizeValue.trim())
+          || (typeof size_tier === 'string' && size_tier.trim())
+          || (generationDefaults.size as string);
+
+        const sanitizedGenerationOptions = { ...restGenerationOptions } as Record<string, any>;
+        if ('seed' in sanitizedGenerationOptions) {
+          const normalizedSeed = normalizeSeedValue(sanitizedGenerationOptions.seed);
+          if (normalizedSeed === undefined) {
+            delete sanitizedGenerationOptions.seed;
+          } else {
+            sanitizedGenerationOptions.seed = normalizedSeed;
+          }
+        }
+
         const generationResponse = await callImageGenerate(model.id, {
+          ...(generationDefaults as Record<string, unknown>),
           prompt: input.prompt,
-          ...(allowedGenerationOptions as {
-            n?: number;
-            size?: string;
-            output_format?: 'png' | 'jpeg' | 'webp';
-            background?: 'transparent' | 'opaque' | 'auto';
-            output_compression?: number;
-          }),
+          ...sanitizedGenerationOptions,
+          ...(resolvedGenerationSize ? { size: resolvedGenerationSize } : {}),
         });
 
         const images = generationResponse.data
@@ -176,7 +240,7 @@ export async function generateImage(
       if (!hasUploadedImages) {
         return {
           success: false,
-          error: '请先上传需要高清化的图片',
+          error: '请先上传需要高清化的图?',
         };
       }
 
@@ -228,7 +292,7 @@ export async function generateImage(
         if (data?.task_id) {
           return {
             success: false,
-            error: `高清化任务已创建，任务 ID: ${data.task_id}`,
+            error: `高清化任务已创建，任�?ID: ${data.task_id}`,
           };
         }
 
@@ -237,16 +301,16 @@ export async function generateImage(
           error: '高清化接口未返回图片结果，请稍后重试',
         };
       } catch (error: any) {
-        console.error('❌ 图片高清化失败:', error);
+        console.error('�?图片高清化失�?', error);
         return {
           success: false,
-          error: error?.message || '调用图片高清化接口失败',
+          error: error?.message || '调用图片高清化接口失败?',
         };
       }
     }
 
-    // 如果不是支持的模型类型
-    console.error('❌ 不支持的模型类型:', model.provider);
+    // 如果不是支持的模型类�?
+    console.error('�?不支持的模型类型:', model.provider);
     return {
       success: false,
       error: `不支持的模型类型: ${model.provider}`,
@@ -255,7 +319,7 @@ export async function generateImage(
   } catch (error: any) {
     console.error('❌ 图像生成失败:', error);
 
-    // 处理不同类型的错误
+    // 处理不同类型的错�?
     let errorMessage = "图像生成失败";
     
     if (error.message) {

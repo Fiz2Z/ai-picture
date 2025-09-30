@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
-import type { Model, GenerateImageResponse } from "@/types/flux";
+import type { Model, GenerateImageResponse, ModelParameter } from "@/types/flux";
 import { generateImage } from "@/services/generate-image";
 import { toast } from 'vue-sonner';
 import { Button } from '@/components/ui/button';
@@ -26,8 +26,19 @@ const generationResult = ref<GenerateImageResponse | null>(null);
 // 基础输入参数
 const prompt = ref('');
 const uploadedImages = ref<Array<{ file: File; url: string; base64: string }>>([]);
+const isEditingMode = computed(() => uploadedImages.value.length > 0);
+
+const shouldDisplayParameter = (param: ModelParameter) => {
+  if (props.model.id === 'qwen-image' && isEditingMode.value && param.key === 'size') {
+    return false;
+  }
+  return true;
+};
+
 const additionalParameters = computed(() =>
-  props.model.inputSchema.filter(param => param.key !== 'prompt' && param.key !== 'messages')
+  props.model.inputSchema
+    .filter(param => param.key !== 'prompt' && param.key !== 'messages')
+    .filter((param) => shouldDisplayParameter(param))
 );
 const hasAdditionalParameters = computed(() => {
   if (props.model.meta?.hideParameters) {
@@ -147,12 +158,35 @@ const getParameterValue = (param: any) => {
 
 // 更新参数值
 const updateParameter = (key: string, value: any) => {
-  parameters.value[key] = value;
+  if ((key === 'size_tier' || key === 'size') && parameters.value[key] === value) {
+    parameters.value[key] = undefined;
+  } else {
+    parameters.value[key] = value;
+  }
+
+  // 互斥尺寸选择：即梦 4.0 的 size_tier 与 size 不能同时生效
+  if (key === 'size_tier' && value) {
+    parameters.value['size'] = undefined;
+  } else if (key === 'size' && value) {
+    parameters.value['size_tier'] = undefined;
+  }
 };
 
 // 检查参数是否为必填
 const isRequired = (param: any) => {
   return param.required === true;
+};
+
+const isParamDisabled = (param: any) => {
+  if (param.key === 'size_tier' && parameters.value['size']) {
+    return true;
+  }
+
+  if (param.key === 'size' && parameters.value['size_tier']) {
+    return true;
+  }
+
+  return false;
 };
 
 // 生成函数
@@ -551,7 +585,7 @@ const renderParameterControl = (param: any) => {
                 :value="getParameterValue(param)"
                 @input="updateParameter(param.key, ($event.target as HTMLInputElement).value)"
                 :placeholder="param.description"
-                :disabled="isGenerating"
+                :disabled="isGenerating || isParamDisabled(param)"
               />
 
               <!-- 数字滑块 -->
@@ -568,7 +602,7 @@ const renderParameterControl = (param: any) => {
                   :min="param.validation?.min || 0"
                   :max="param.validation?.max || (param.key === 'max_tokens' ? 4000 : param.key === 'temperature' ? 2 : 100)"
                   :step="param.key === 'temperature' ? 0.1 : 1"
-                  :disabled="isGenerating"
+                  :disabled="isGenerating || isParamDisabled(param)"
                   class="w-full"
                 />
               </div>
@@ -579,7 +613,7 @@ const renderParameterControl = (param: any) => {
                   :id="param.key"
                   :checked="getParameterValue(param)"
                   @update:checked="updateParameter(param.key, $event)"
-                  :disabled="isGenerating"
+                  :disabled="isGenerating || isParamDisabled(param)"
                 />
                 <Label :for="param.key" class="text-sm">
                   {{ getParameterValue(param) ? '开启' : '关闭' }}
@@ -598,7 +632,7 @@ const renderParameterControl = (param: any) => {
                   type="button"
                   :variant="getParameterValue(param) === option ? 'default' : 'outline'"
                   @click="updateParameter(param.key, option)"
-                  :disabled="isGenerating"
+                  :disabled="isGenerating || isParamDisabled(param)"
                 >
                   {{ option }}
                 </Button>

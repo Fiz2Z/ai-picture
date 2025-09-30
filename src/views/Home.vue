@@ -12,13 +12,15 @@ const featuredModels = modelCategories.flatMap(cat => cat.models).slice(0, 3);
 
 const router = useRouter();
 
-// 跳转到第一个模型
+// 跳转到推荐模型
 const startGeneration = () => {
-  if (allModels.length > 0) {
-    const firstModel = allModels[0];
-    const routeId = firstModel.id.replace(/\//g, '-');
-    router.push(`/models/${routeId}`);
-  }
+  const defaultModelId = 'gemini-2.5-flash-image-preview';
+  const targetModel = allModels.find(model => model.id === defaultModelId) || allModels[0];
+
+  if (!targetModel) return;
+
+  const routeId = targetModel.id.replace(/\//g, '-');
+  router.push(`/models/${routeId}`);
 };
 </script>
 
