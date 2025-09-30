@@ -1,29 +1,30 @@
 # AI 多模态应用
 
-这是一个基于 OpenRouter API 的多模态 AI 应用，支持文本生成和图像理解功能。该应用采用 Vue 3 和 ShadcnUI 构建，支持响应式设计，确保在桌面端和移动端都有出色的用户体验。
+这是一个基于 OpenAI gpt-image-1 与 Google Gemini 2.5 Flash Image Preview 的图像生成应用，支持文本到图像生成以及图像编辑功能。项目采用 Vue 3 和 ShadcnUI 构建，提供响应式设计，在桌面端和移动端都具备良好的体验。
 
 ## 🌟 主要特点
 
-- **多模态支持**：集成 OpenRouter 的多模态模型，支持文本和图像输入
-- **可扩展架构**：支持多渠道多模型，方便后续添加不同的 AI 模型
+- **图像生成与编辑**：集成 gpt-image-1 与 gemini-2.5-flash-image-preview，同步支持生成与局部编辑
+- **可扩展架构**：模型注册系统方便接入更多图像模型
 - **环境变量配置**：通过 Docker 环境变量进行配置，无需复杂的密钥管理
 - **响应式设计**：完美适配桌面端和移动端设备
 - **现代化UI**：基于 ShadcnUI 构建的现代化用户界面
 
 ## 🚀 功能亮点
 
-### 多模态交互
+### 图像交互
 
-- 支持纯文本输入进行对话
-- 支持图像+文本输入进行图像理解
-- 可调整的生成参数（温度、最大令牌数等）
-- 实时显示 API 使用统计
+- 支持文本提示词生成高清图像
+- 支持上传参考图像进行局部编辑
+- 可调整生成尺寸、格式、背景等关键参数
+- 生成结果支持对比查看与一键下载
+- 一键无损放大现有图片，获取高清化结果
 
 ### 模型管理
 
-- 当前支持 Google Gemini 2.5 Flash Image Preview 模型
-- 可扩展的模型注册系统，方便添加新模型
-- 支持不同提供商的模型集成
+- 当前支持 OpenAI gpt-image-1 与 Google Gemini 2.5 Flash Image Preview 模型
+- 可扩展的模型注册系统，方便添加新的图像模型
+- 统一的生成与编辑流程，便于扩展其它绘画能力
 
 ## 🐳 Docker 部署
 
@@ -32,16 +33,9 @@
 创建 `.env` 文件并配置以下环境变量：
 
 ```bash
-# OpenRouter API配置
-VITE_OPENROUTER_API_KEY=your_openrouter_api_key_here
-
-# 网站信息（用于OpenRouter排名）
-VITE_SITE_URL=http://localhost:5173
-VITE_SITE_NAME=AI Image Generator
-
-# Supabase配置（如果需要）
-VITE_SUPABASE_URL=your_supabase_url_here
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key_here
+# 图像 API 配置
+VITE_IMAGE_API_URL=https://api.gpt.ge
+VITE_IMAGE_API_KEY=your_image_api_key_here
 ```
 
 ### 构建和运行
@@ -129,9 +123,6 @@ export const new_model: Model = {
   ]
 };
 ```
-- 密钥分组功能，便于组织管理
-- 一键测试密钥可用性
-- 当密钥余额不足时自动切换到下一个可用密钥
 
 ## 🛠️ 技术栈
 
@@ -139,8 +130,8 @@ export const new_model: Model = {
 - **UI 组件**：ShadcnUI + Tailwind CSS
 - **状态管理**：Vue Composition API
 - **路由**：Vue Router
-- **API 集成**：FAL.AI JavaScript SDK
-- **数据存储**：Supabase + 本地存储
+- **API 集成**：OpenAI Images API (gpt-image-1)
+- **数据存储**：本地存储
 - **构建工具**：Vite
 - **部署**：Vercel
 
@@ -183,15 +174,14 @@ export const new_model: Model = {
 
 ## 🔑 API 密钥配置
 
-应用需要 FAL.AI API 密钥才能正常工作。您可以通过以下方式配置密钥：
+应用需要有效的图像 API 密钥才能正常工作。您可以通过以下方式配置密钥：
 
-1. **本地开发环境变量**：在 `.env` 文件中设置 `VITE_FAL_API_KEYS`
-2. **Vercel 部署环境变量**：在 Vercel 项目仓库的设置页面中，进入 "Environment Variables" 部分添加 `VITE_FAL_API_KEYS` 变量
-3. **用户界面**：通过应用内的 API 密钥管理界面添加密钥
+1. **本地开发环境变量**：在 `.env` 文件中设置 `VITE_IMAGE_API_KEY`
+2. **生产部署环境变量**：在部署平台的环境变量设置中添加 `VITE_IMAGE_API_KEY`
 
-多个 API 密钥可以用逗号分隔：
+示例：
 ```
-VITE_FAL_API_KEYS=key1,key2,key3
+VITE_IMAGE_API_KEY=sk-xxxxxxxxxxxxxxxx
 ```
 
 > **重要提示：** 如果您在 Vercel 上部署应用，必须在 Vercel 项目仓库的设置页面中配置环境变量，而不是仅仅依赖于 `.env` 文件。这是因为在构建过程中，`.env` 文件中的变量可能不会被正确地应用到部署环境中。
@@ -214,7 +204,7 @@ VITE_FAL_API_KEYS=key1,key2,key3
 
 ## 🙏 致谢
 
-- [FAL.AI](https://fal.ai/) 提供强大的 AI 图像生成 API
+- [OpenAI](https://platform.openai.com/) 提供先进的图像生成 API
 - [ShadcnUI](https://ui.shadcn.com/) 提供美观实用的 UI 组件
 - [Vue 团队](https://vuejs.org/) 开发了出色的前端框架
 - 所有为本项目做出贡献的开发者

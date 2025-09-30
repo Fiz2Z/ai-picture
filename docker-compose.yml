@@ -6,14 +6,8 @@ services:
     ports:
       - "80:80"
     environment:
-      # OpenRouter API配置
-      - VITE_OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      # 网站信息（用于OpenRouter排名）
-      - VITE_SITE_URL=${SITE_URL:-http://localhost}
-      - VITE_SITE_NAME=${SITE_NAME:-AI Picture}
-      # Supabase配置（如果需要）
-      - VITE_SUPABASE_URL=${SUPABASE_URL}
-      - VITE_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - VITE_IMAGE_API_URL=${IMAGE_API_URL:-https://api.gpt.ge}
+      - VITE_IMAGE_API_KEY=${IMAGE_API_KEY}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]

@@ -10,11 +10,10 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Upload, X, Image as ImageIcon, Settings, Download } from 'lucide-vue-next';
+import { Loader2, Upload, X, Image as ImageIcon, Settings, Download, Wand2 } from 'lucide-vue-next';
 import ImageComparison from './ImageComparison.vue';
+import { getModelById } from '@/router/models';
 
 const props = defineProps<{
   model: Model;
@@ -27,6 +26,25 @@ const generationResult = ref<GenerateImageResponse | null>(null);
 // 基础输入参数
 const prompt = ref('');
 const uploadedImages = ref<Array<{ file: File; url: string; base64: string }>>([]);
+const additionalParameters = computed(() =>
+  props.model.inputSchema.filter(param => param.key !== 'prompt' && param.key !== 'messages')
+);
+const hasAdditionalParameters = computed(() => {
+  if (props.model.meta?.hideParameters) {
+    return false;
+  }
+  return additionalParameters.value.length > 0;
+});
+const maxUploadImages = computed(() => props.model.meta?.maxUploadImages ?? Infinity);
+const requiresPrompt = computed(() => props.model.meta?.requiresPrompt !== false);
+const requiresImage = computed(() => props.model.meta?.requiresImage === true);
+const showPrompt = computed(() => requiresPrompt.value || !props.model.meta?.hidePrompt);
+
+const UPSCALE_MODEL_ID = 'image-upscale';
+const upscaleModel = computed(() => getModelById(UPSCALE_MODEL_ID));
+const hasUpscaleModel = computed(() => Boolean(upscaleModel.value));
+const upscalingState = ref<Record<number, boolean>>({});
+const upscaledComparisons = ref<Array<{ original: string; enhanced: string }>>([]);
 
 // 动态参数
 const parameters = ref<Record<string, any>>({});
@@ -39,6 +57,11 @@ const handleFileUpload = async (event: Event) => {
   if (!files) return;
 
   for (const file of Array.from(files)) {
+    if (uploadedImages.value.length >= maxUploadImages.value) {
+      toast.error(`最多只能上传 ${maxUploadImages.value} 张图片`);
+      break;
+    }
+
     // 检查文件类型
     if (!file.type.startsWith('image/')) {
       toast.error(`${file.name} 不是有效的图片文件`);
@@ -112,6 +135,8 @@ watch(() => props.model, () => {
   uploadedImages.value.forEach(img => URL.revokeObjectURL(img.url));
   uploadedImages.value = [];
   generationResult.value = null;
+  upscalingState.value = {};
+  upscaledComparisons.value = [];
   initParameters();
 }, { immediate: true });
 
@@ -132,8 +157,13 @@ const isRequired = (param: any) => {
 
 // 生成函数
 const handleGenerate = async () => {
-  if (!prompt.value.trim()) {
+  if (requiresPrompt.value && !prompt.value.trim()) {
     toast.error('请输入提示词');
+    return;
+  }
+
+  if (requiresImage.value && uploadedImages.value.length === 0) {
+    toast.error('请上传至少一张图片');
     return;
   }
 
@@ -145,22 +175,27 @@ const handleGenerate = async () => {
     }
   }
 
+  upscaledComparisons.value = [];
   isGenerating.value = true;
   generationResult.value = null;
 
   try {
     const input: Record<string, any> = {
       ...parameters.value,
-      prompt: prompt.value,
     };
 
+    if (showPrompt.value || prompt.value.trim()) {
+      input.prompt = prompt.value;
+    }
+
     // 构建消息格式
-    const messageContent: any[] = [
-      {
+    const messageContent: any[] = [];
+    if (showPrompt.value && prompt.value.trim()) {
+      messageContent.push({
         type: "text",
-        text: prompt.value
-      }
-    ];
+        text: prompt.value.trim()
+      });
+    }
 
     // 添加图片
     uploadedImages.value.forEach(image => {
@@ -172,12 +207,21 @@ const handleGenerate = async () => {
       });
     });
 
-    input.messages = [
-      {
-        role: "user",
-        content: messageContent
-      }
-    ];
+    if (messageContent.length > 0) {
+      input.messages = [
+        {
+          role: "user",
+          content: messageContent
+        }
+      ];
+    }
+
+    // 将已上传的图片信息传递给服务层（用于 GPT Image 编辑接口）
+    input.uploadedImages = uploadedImages.value.map(image => ({
+      file: image.file,
+      url: image.url,
+      base64: image.base64
+    }));
 
     console.log('🚀 开始生成:', { model: props.model.id, input });
     
@@ -205,6 +249,84 @@ const handleGenerate = async () => {
 // 清除结果
 const clearResult = () => {
   generationResult.value = null;
+  upscaledComparisons.value = [];
+};
+
+const setUpscalingState = (index: number, value: boolean) => {
+  upscalingState.value = {
+    ...upscalingState.value,
+    [index]: value,
+  };
+};
+
+const isUpscaling = (index: number) => upscalingState.value[index] === true;
+
+const imageUrlToFile = async (imageUrl: string): Promise<File> => {
+  const response = await fetch(imageUrl);
+  const blob = await response.blob();
+  const extension = blob.type?.split('/')?.[1] || 'png';
+  return new File([blob], `image-${Date.now()}.${extension}`, { type: blob.type || 'image/png' });
+};
+
+const handleUpscale = async (imageUrl: string, index: number) => {
+  if (!upscaleModel.value) {
+    toast.error('未找到高清化模型配置');
+    return;
+  }
+
+  try {
+    setUpscalingState(index, true);
+
+    const file = await imageUrlToFile(imageUrl);
+    const base64 = imageUrl.startsWith('data:') ? imageUrl : await fileToBase64(file);
+
+    const result = await generateImage(upscaleModel.value, {
+      uploadedImages: [
+        {
+          file,
+          url: imageUrl,
+          base64,
+        },
+      ],
+    });
+
+    if (result.success && result.images?.length) {
+      toast.success('图片高清化完成');
+
+      if (!generationResult.value) {
+        generationResult.value = result;
+        return;
+      }
+
+      if (generationResult.value.success) {
+        const existingImages = generationResult.value.images ?? [];
+        generationResult.value = {
+          ...generationResult.value,
+          images: [...existingImages, ...result.images],
+        } as GenerateImageResponse;
+      } else {
+        generationResult.value = result;
+      }
+
+      const enhancedUrl = result.images[0].url;
+      const exists = upscaledComparisons.value.some(pair => pair.original === imageUrl && pair.enhanced === enhancedUrl);
+      if (!exists) {
+        upscaledComparisons.value.push({
+          original: imageUrl,
+          enhanced: enhancedUrl,
+        });
+      }
+    } else if (!result.success) {
+      toast.error(result.error ?? '高清化失败');
+    } else {
+      toast.error('高清化接口未返回图片结果');
+    }
+  } catch (error: any) {
+    console.error('高清化失败:', error);
+    toast.error(error?.message || '高清化过程中发生错误');
+  } finally {
+    setUpscalingState(index, false);
+  }
 };
 
 // 下载图片功能
@@ -280,8 +402,6 @@ const handleDownload = async (imageUrl: string, filename: string = 'image.png') 
 
 // 渲染参数控件
 const renderParameterControl = (param: any) => {
-  const value = getParameterValue(param);
-  
   switch (param.type) {
     case 'string':
       if (param.key === 'prompt') return null; // prompt单独处理
@@ -291,7 +411,7 @@ const renderParameterControl = (param: any) => {
     case 'boolean':
       return 'switch';
     case 'enum':
-      return 'select';
+      return 'button-group';
     default:
       return 'input';
   }
@@ -305,7 +425,7 @@ const renderParameterControl = (param: any) => {
       <!-- 左侧：输入控制区 -->
       <div class="space-y-6">
         <!-- 提示词输入 -->
-        <Card>
+        <Card v-if="showPrompt">
           <CardHeader>
             <CardTitle class="flex items-center gap-2">
               <ImageIcon class="h-5 w-5" />
@@ -314,11 +434,13 @@ const renderParameterControl = (param: any) => {
           </CardHeader>
           <CardContent class="space-y-4">
             <div class="space-y-2">
-              <Label for="prompt">描述您想要生成的内容 *</Label>
+              <Label for="prompt">
+                {{ requiresPrompt ? '描述您想要生成的内容 *' : '提示词（可选）' }}
+              </Label>
               <Textarea
                 id="prompt"
                 v-model="prompt"
-                placeholder="请输入详细的提示词描述..."
+                :placeholder="requiresPrompt ? '请输入详细的提示词描述...' : '可根据需要输入说明信息'"
                 rows="4"
                 :disabled="isGenerating"
                 class="resize-none"
@@ -333,10 +455,17 @@ const renderParameterControl = (param: any) => {
             <CardTitle class="flex items-center gap-2">
               <Upload class="h-5 w-5" />
               图片上传
-              <Badge variant="secondary">可选</Badge>
+              <Badge v-if="!requiresImage" variant="secondary">可选</Badge>
+              <Badge v-else variant="default">必选</Badge>
             </CardTitle>
           </CardHeader>
           <CardContent class="space-y-4">
+            <p class="text-sm text-muted-foreground">
+              支持上传多张参考图，单张不超过 10MB。
+              <span v-if="requiresImage">该模型需要至少上传一张图片。</span>
+              <span v-else-if="maxUploadImages !== Infinity">最多 {{ maxUploadImages }} 张。</span>
+            </p>
+
             <!-- 上传按钮 -->
             <div class="flex items-center justify-center w-full">
               <label
@@ -391,8 +520,8 @@ const renderParameterControl = (param: any) => {
           </CardContent>
         </Card>
 
-        <!-- 动态参数配置 - 仅对非Gemini模型显示 -->
-        <Card v-if="!model.id.includes('gemini')">
+        <!-- 动态参数配置 -->
+        <Card v-if="hasAdditionalParameters">
           <CardHeader>
             <CardTitle class="flex items-center gap-2">
               <Settings class="h-5 w-5" />
@@ -401,7 +530,7 @@ const renderParameterControl = (param: any) => {
           </CardHeader>
           <CardContent class="space-y-4">
             <div
-              v-for="param in model.inputSchema.filter(p => p.key !== 'prompt' && p.key !== 'messages')"
+              v-for="param in additionalParameters"
               :key="param.key"
               class="space-y-2"
             >
@@ -457,26 +586,23 @@ const renderParameterControl = (param: any) => {
                 </Label>
               </div>
 
-              <!-- 选择器 -->
-              <Select
-                v-else-if="renderParameterControl(param) === 'select'"
-                :value="getParameterValue(param)"
-                @update:value="updateParameter(param.key, $event)"
-                :disabled="isGenerating"
+              <!-- 枚举参数按钮组 -->
+              <div
+                v-else-if="renderParameterControl(param) === 'button-group'"
+                class="flex flex-wrap gap-2"
               >
-                <SelectTrigger>
-                  <SelectValue :placeholder="`选择${param.description || param.key}`" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem
-                    v-for="(option, optionIndex) in param.options"
-                    :key="optionIndex"
-                    :value="String(option)"
-                  >
-                    {{ option }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+                <Button
+                  v-for="(option, optionIndex) in param.options"
+                  :key="optionIndex"
+                  size="sm"
+                  type="button"
+                  :variant="getParameterValue(param) === option ? 'default' : 'outline'"
+                  @click="updateParameter(param.key, option)"
+                  :disabled="isGenerating"
+                >
+                  {{ option }}
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -485,7 +611,11 @@ const renderParameterControl = (param: any) => {
         <div class="flex gap-3">
           <Button 
             @click="handleGenerate" 
-            :disabled="isGenerating || !prompt.trim()"
+            :disabled="
+              isGenerating ||
+              (requiresPrompt && !prompt.trim()) ||
+              (requiresImage && uploadedImages.length === 0)
+            "
             class="flex-1"
             size="lg"
           >
@@ -516,7 +646,26 @@ const renderParameterControl = (param: any) => {
             <!-- 成功结果 -->
             <div v-if="generationResult.success" class="space-y-6">
               <!-- 图片对比或单独显示 -->
-              <div v-if="generationResult.images && generationResult.images.length > 0">
+              <div v-if="upscaledComparisons.length > 0" class="space-y-4">
+                <div class="space-y-1">
+                  <h3 class="text-lg font-semibold">高清化对比</h3>
+                  <p class="text-sm text-muted-foreground">拖动中间的分隔线查看高清前后的差异，可分别下载前后图片。</p>
+                </div>
+                <div class="space-y-6">
+                  <div
+                    v-for="(pair, pairIndex) in upscaledComparisons"
+                    :key="`upscaled-${pairIndex}`"
+                    class="rounded-lg border p-4 bg-card"
+                  >
+                    <ImageComparison
+                      :originalImage="pair.original"
+                      :generatedImage="pair.enhanced"
+                      @download="handleDownload"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div v-else-if="generationResult.images && generationResult.images.length > 0">
                 <!-- 如果有上传的图片，显示对比效果 -->
                 <div v-if="uploadedImages.length > 0 && generationResult.images.length > 0">
                   <ImageComparison
@@ -540,6 +689,22 @@ const renderParameterControl = (param: any) => {
                         loading="lazy"
                       />
                     </div>
+                    <!-- 高清化按钮 -->
+                    <Button
+                      v-if="hasUpscaleModel"
+                      @click="handleUpscale(image.url, index)"
+                      class="absolute top-2 left-2 flex items-center gap-1 rounded-full bg-primary text-primary-foreground px-3 py-1 opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-md shadow-primary/40 hover:-translate-y-0.5"
+                      size="sm"
+                      variant="default"
+                      :disabled="isUpscaling(index)"
+                    >
+                      <Loader2 v-if="isUpscaling(index)" class="h-4 w-4 mr-1 animate-spin" />
+                      <span v-else class="flex items-center gap-1">
+                        <Wand2 class="h-4 w-4" />
+                        图片高清化
+                      </span>
+                    </Button>
+
                     <!-- 下载按钮 -->
                     <Button
                       @click="handleDownload(image.url, `generated-image-${index + 1}.png`)"

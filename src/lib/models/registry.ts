@@ -1,27 +1,28 @@
 import type { Model } from "@/types/flux";
-import * as openrouterModels from "./openrouter/image-models";
+import * as imageModels from "./image-models";
 
-// Get all exported models from OpenRouter
-const openrouterModelsList = Object.values(openrouterModels).filter(
-  (value): value is Model => {
+const extractModels = (module: Record<string, unknown>): Model[] =>
+  Object.values(module).filter((value): value is Model => {
     return (
-      typeof value === "object" &&
+      typeof value === 'object' &&
       value !== null &&
-      "name" in value &&
-      "id" in value &&
-      "inputSchema" in value &&
-      "outputSchema" in value
+      'name' in value &&
+      'id' in value &&
+      'inputSchema' in value &&
+      'outputSchema' in value
     );
-  }
-);
+  });
+
+// Get all exported models
+const imageModelsList = extractModels(imageModels);
 
 // Export all models in a single array
-export const allModels = [...openrouterModelsList];
+export const allModels = [...imageModelsList];
 
 // Create model categories
 export const modelCategories = [
   {
-    title: '多模态模型',
-    models: allModels.filter(model => model.category === '多模态模型')
-  }
+    title: '绘画模型',
+    models: imageModelsList,
+  },
 ];

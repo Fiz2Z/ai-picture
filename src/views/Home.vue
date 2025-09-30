@@ -28,9 +28,9 @@ const startGeneration = () => {
     <div class="flex flex-col items-center space-y-12">
       <!-- 英雄区域 -->
       <div class="w-full max-w-5xl text-center py-12">
-        <h1 class="text-5xl font-bold mb-6">AI Picture</h1>
+        <h1 class="text-5xl font-bold mb-6">AI Picture 聚合平台</h1>
         <p class="text-xl text-muted-foreground max-w-2xl mx-auto mb-8">
-          使用先进的AI模型生成惊人的图像，支持多模态交互，简单、快速、高效
+          一站整合 OpenAI、Google Gemini 等主流图像模型，提供生成、编辑、高清化等全流程能力，让创作更高效、更简单。
         </p>
         <div class="flex flex-wrap justify-center gap-4">
           <Button size="lg" @click="startGeneration">
@@ -48,28 +48,28 @@ const startGeneration = () => {
           <Card>
             <CardHeader>
               <Sparkles class="h-8 w-8 text-primary mb-2" />
-              <CardTitle>高质量生成</CardTitle>
+              <CardTitle>多模型聚合</CardTitle>
             </CardHeader>
             <CardContent>
-              <p class="text-muted-foreground">使用最新的多模态AI模型，支持文本和图像理解</p>
+              <p class="text-muted-foreground">整合不同厂商的最新图像模型，任选最佳效果，无需在多个平台之间切换。</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader>
               <Zap class="h-8 w-8 text-primary mb-2" />
-              <CardTitle>多模态交互</CardTitle>
+              <CardTitle>智能生成与编辑</CardTitle>
             </CardHeader>
             <CardContent>
-              <p class="text-muted-foreground">支持文本+图像的多模态输入，理解能力更强</p>
+              <p class="text-muted-foreground">文本生成、局部重绘、图像编辑一站完成，创作流程更顺畅。</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader>
               <Image class="h-8 w-8 text-primary mb-2" />
-              <CardTitle>易于扩展</CardTitle>
+              <CardTitle>一键高清化</CardTitle>
             </CardHeader>
             <CardContent>
-              <p class="text-muted-foreground">模块化架构，方便添加新的AI模型和功能</p>
+              <p class="text-muted-foreground">内置无损放大能力，随时将作品升级为高分辨率版本。</p>
             </CardContent>
           </Card>
         </div>
@@ -92,17 +92,17 @@ const startGeneration = () => {
             :to="`/models/${model.id.replace(/\//g, '-')}`"
             class="block"
           >
-            <Card class="h-full transition-all duration-200 hover:scale-[1.02] hover:shadow-lg">
+            <Card class="h-full flex flex-col transition-all duration-200 hover:scale-[1.02] hover:shadow-lg">
               <CardHeader>
                 <CardTitle>{{ model.name }}</CardTitle>
                 <CardDescription class="truncate">{{ model.id }}</CardDescription>
               </CardHeader>
-              <CardContent>
-                <p class="text-sm text-muted-foreground line-clamp-2">
-                  {{ model.description || '先进的AI模型，支持多模态交互' }}
+              <CardContent class="flex-1">
+                <p class="text-sm text-muted-foreground line-clamp-3">
+                  {{ model.description || '先进的图像生成模型' }}
                 </p>
               </CardContent>
-              <CardFooter>
+              <CardFooter class="mt-auto">
                 <Button variant="secondary" class="w-full">开始生成</Button>
               </CardFooter>
             </Card>
